@@ -1,0 +1,6 @@
+{
+  "name": "CredBridge",
+  "description": "Student credibility platform transforming achievements into a solid financial passport, powered by trust analytics and Gemini AI.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
