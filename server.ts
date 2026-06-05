@@ -33,15 +33,15 @@ app.post("/api/chat", async (req, res) => {
 
   let openModelKey = process.env.OPEN_MODEL_API_KEY || process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY;
   let openModelBaseUrl = process.env.OPEN_MODEL_BASE_URL || process.env.OPENAI_BASE_URL;
-  let openModelName = process.env.OPEN_MODEL_NAME;
+  let openModelName = process.env.OPEN_MODEL_NAME || "openai/gpt-oss-120b";
 
-  // Auto-detect Groq keys and provide high-performance defaults
-  if (openModelKey && (openModelKey.startsWith("gsk_") || process.env.GROQ_API_KEY)) {
-    if (!openModelBaseUrl) openModelBaseUrl = "https://api.groq.com/openai/v1";
-    if (!openModelName) openModelName = "llama-3.3-70b-versatile";
-  } else {
-    if (!openModelBaseUrl) openModelBaseUrl = "https://api.openai.com/v1";
-    if (!openModelName) openModelName = "gpt-3.5-turbo";
+  // Auto-detect high-performance gateways if base URL is not specified
+  if (openModelKey && !openModelBaseUrl) {
+    if (openModelKey.startsWith("gsk_") || (openModelKey === process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.OPEN_MODEL_API_KEY)) {
+      openModelBaseUrl = "https://api.groq.com/openai/v1";
+    } else {
+      openModelBaseUrl = "https://api.openai.com/v1";
+    }
   }
 
   const ollamaUrl = process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST; // e.g., http://localhost:11434
