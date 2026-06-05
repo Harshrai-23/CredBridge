@@ -17,35 +17,13 @@ app.get("/api/health", (req, res) => {
   res.json({ status: "ok" });
 });
 
-// API: Trust Coach AI chat handler proxies requests to configured AI Gateway (Azure OpenAI, Open Models, Ollama, Gemini)
+// API: Trust Coach AI chat handler proxies requests to Gemini AI
 app.post("/api/chat", async (req, res) => {
   const { message, history = [], profile } = req.body;
 
   if (!message) {
     return res.status(400).json({ error: "Message parameter is required." });
   }
-
-  // 1. Detect alternative configuration variables
-  const azureKey = process.env.AZURE_OPENAI_API_KEY;
-  const azureEndpoint = process.env.AZURE_OPENAI_ENDPOINT; // e.g., https://myresource.openai.azure.com
-  const azureDeployment = process.env.AZURE_OPENAI_DEPLOYMENT; // e.g., gpt-35-turbo
-  const azureApiVersion = process.env.AZURE_OPENAI_API_VERSION || "2023-05-15";
-
-  let openModelKey = process.env.OPEN_MODEL_API_KEY || process.env.OPENAI_API_KEY || process.env.GROQ_API_KEY;
-  let openModelBaseUrl = process.env.OPEN_MODEL_BASE_URL || process.env.OPENAI_BASE_URL;
-  let openModelName = process.env.OPEN_MODEL_NAME || "openai/gpt-oss-120b";
-
-  // Auto-detect high-performance gateways if base URL is not specified
-  if (openModelKey && !openModelBaseUrl) {
-    if (openModelKey.startsWith("gsk_") || (openModelKey === process.env.GROQ_API_KEY && !process.env.OPENAI_API_KEY && !process.env.OPEN_MODEL_API_KEY)) {
-      openModelBaseUrl = "https://api.groq.com/openai/v1";
-    } else {
-      openModelBaseUrl = "https://api.openai.com/v1";
-    }
-  }
-
-  const ollamaUrl = process.env.OLLAMA_BASE_URL || process.env.OLLAMA_HOST; // e.g., http://localhost:11434
-  const ollamaModelName = process.env.OLLAMA_MODEL || "llama3";
 
   const geminiApiKey = process.env.GEMINI_API_KEY;
 
@@ -62,116 +40,7 @@ app.post("/api/chat", async (req, res) => {
 
 User Query: "${message}"`;
 
-  // === SELECTION 1: Azure OpenAI ===
-  if (azureKey && azureEndpoint && azureDeployment) {
-    try {
-      console.log(`Routing Chat to Azure OpenAI Deployment: ${azureDeployment}`);
-      const cleanEndpoint = azureEndpoint.endsWith("/") ? azureEndpoint.slice(0, -1) : azureEndpoint;
-      const url = `${cleanEndpoint}/openai/deployments/${azureDeployment}/chat/completions?api-version=${azureApiVersion}`;
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "api-key": azureKey,
-        },
-        body: JSON.stringify({
-          messages: [
-            { role: "system", content: systemInstruction },
-            { role: "user", content: contextPrompt },
-          ],
-          temperature: 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Azure Gateway responded with status ${response.status}: ${errorText}`);
-      }
-
-      const data: any = await response.json();
-      const reply = data.choices?.[0]?.message?.content || "No reply returned from Azure OpenAI.";
-      return res.json({ reply });
-    } catch (err: any) {
-      console.error("Azure OpenAI integration failed, falling back:", err);
-      return res.status(500).json({ error: "Azure OpenAI error", details: err.message });
-    }
-  }
-
-  // === SELECTION 2: Open Models / OpenAI-Compatible (Groq, OpenRouter, standard OpenAI) ===
-  if (openModelKey) {
-    try {
-      console.log(`Routing Chat to Open Model Gateway: ${openModelName} at ${openModelBaseUrl}`);
-      const cleanBaseUrl = openModelBaseUrl.endsWith("/") ? openModelBaseUrl.slice(0, -1) : openModelBaseUrl;
-      const url = `${cleanBaseUrl}/chat/completions`;
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${openModelKey}`,
-        },
-        body: JSON.stringify({
-          model: openModelName,
-          messages: [
-            { role: "system", content: systemInstruction },
-            { role: "user", content: contextPrompt },
-          ],
-          temperature: 0.7,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Open Model API responded with status ${response.status}: ${errorText}`);
-      }
-
-      const data: any = await response.json();
-      const reply = data.choices?.[0]?.message?.content || "No reply returned from Open Model endpoint.";
-      return res.json({ reply });
-    } catch (err: any) {
-      console.error("Open Model endpoint integration failed:", err);
-      return res.status(500).json({ error: "Open Model API error", details: err.message });
-    }
-  }
-
-  // === SELECTION 3: Local Self-Hosted Ollama ===
-  if (ollamaUrl) {
-    try {
-      console.log(`Routing Chat to local Ollama Model: ${ollamaModelName} at ${ollamaUrl}`);
-      const cleanOllamaUrl = ollamaUrl.endsWith("/") ? ollamaUrl.slice(0, -1) : ollamaUrl;
-      const url = `${cleanOllamaUrl}/api/chat`;
-
-      const response = await fetch(url, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          model: ollamaModelName,
-          messages: [
-            { role: "system", content: systemInstruction },
-            { role: "user", content: contextPrompt },
-          ],
-          stream: false,
-        }),
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Ollama responded with status ${response.status}: ${errorText}`);
-      }
-
-      const data: any = await response.json();
-      const reply = data.message?.content || "No response contents from local Ollama.";
-      return res.json({ reply });
-    } catch (err: any) {
-      console.error("Ollama connection failed:", err);
-      return res.status(500).json({ error: "Ollama connection error", details: err.message });
-    }
-  }
-
-  // === SELECTION 4: Default Google Gemini (Standard Mode) ===
+  // === Default Google Gemini (Standard Mode) ===
   const isGeminiConfigured = geminiApiKey && geminiApiKey !== "MY_GEMINI_API_KEY" && !geminiApiKey.includes("REPLACE");
   if (isGeminiConfigured) {
     try {
@@ -201,7 +70,7 @@ User Query: "${message}"`;
     }
   }
 
-  // === SELECTION 5: Sandbox fallback (Simulated Advisor mode) ===
+  // === Sandbox fallback (Simulated Advisor mode) ===
   console.log("No remote AI credentials configured. Running Simulated Advisor mode.");
   let reply = "";
   const query = message.toLowerCase();
